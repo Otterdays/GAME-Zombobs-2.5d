@@ -1,0 +1,67 @@
+[package]
+name = "zombs-engine"
+version = "0.1.0"
+edition = "2021"
+authors = ["Zombobs Team"]
+description = "A custom 2.5D game engine for Zombobs built with Rust, WASM, and WebGPU"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["console_error_panic_hook"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = { version = "0.1.6", optional = true }
+wgpu = "23.0"
+hecs = "0.10"
+glam = "0.25"
+rayon = "1.8"
+serde = { version = "1.0", features = ["derive"] }
+serde-wasm-bindgen = "0.4"
+js-sys = "0.3"
+rand = { version = "0.8", features = ["small_rng"] }
+getrandom = { version = "0.2", features = ["js"] }
+bytemuck = { version = "1.24.0", features = ["derive"] }
+image = { version = "0.24", default-features = false, features = ["png"] }
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+    "Window",
+    "Document",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "Element",
+    "Gpu",
+    "GpuAdapter",
+    "GpuDevice",
+    "GpuQueue",
+    "GpuCanvasContext",
+    "GpuTextureFormat",
+    "GpuShaderModule",
+    "GpuRenderPipeline",
+    "GpuRenderPassDescriptor",
+    "GpuColorTargetState",
+    "GpuFragmentState",
+    "GpuVertexState",
+    "GpuBindGroup",
+    "GpuBuffer",
+    "GpuBufferDescriptor",
+    "AudioContext",
+    "console",
+    "Performance",
+    "KeyboardEvent",
+    "MouseEvent",
+    "Event",
+    "EventListener",
+]
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZOMBOBS 2.5D ENGINE</title>
+    <link rel="stylesheet" href="ui.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0a0c10;
+            overflow: hidden;
+            color: #fff;
+            font-family: monospace;
+            /* Use custom yellow bullet as default system cursor */
+            cursor: url('data:image/svg+xml;utf8,<svg width="32" height="32" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M8 2 L16 2 L20 8 L20 22 L4 22 L4 8 Z" fill="%23FFD700" stroke="black" stroke-width="2"/></svg>') 12 12, auto;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            color: #00ff00;
+        }
+
+        /* UI Overlay */
+        #ui-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        #ui-overlay.active {
+            pointer-events: all;
+        }
+
+        /* Main Menu */
+        #main-menu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(10, 12, 16, 0.95);
+            border: 2px solid #00ff00;
+            padding: 40px 60px;
+            min-width: 300px;
+            text-align: center;
+            display: none;
+        }
+
+        #main-menu.active {
+            display: block;
+        }
+
+        #main-menu h1 {
+            margin: 0 0 30px 0;
+            font-size: 32px;
+            color: #00ff00;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        }
+
+        .menu-button {
+            display: block;
+            width: 100%;
+            padding: 12px 20px;
+            margin: 10px 0;
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            font-family: monospace;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .menu-button:hover {
+            background: rgba(0, 255, 0, 0.2);
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+        }
+
+        .menu-button:active {
+            background: rgba(0, 255, 0, 0.3);
+        }
+
+        #version-text {
+            margin-top: 30px;
+            font-size: 12px;
+            color: rgba(0, 255, 0, 0.6);
+            font-family: monospace;
+            text-align: center;
+            letter-spacing: 1px;
+        }
+
+
+        /* Crosshair */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            pointer-events: none;
+            /* Green Crosshair (Standard) */
+        }
+
+        #crosshair::before,
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            background: #00ff00;
+            box-shadow: 0 0 4px rgba(0, 255, 0, 0.5);
+        }
+
+        #crosshair::before {
+            top: 9px;
+            left: 0;
+            width: 20px;
+            height: 2px;
+        }
+
+        #crosshair::after {
+            top: 0;
+            left: 9px;
+            width: 2px;
+            height: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="menu-bg"></div>
+    <div id="flashlight-overlay"></div>
+    <div id="crt-overlay"></div>
+
+    <div id="loading">INITIALIZING ZOMBS-ENGINE...</div>
+    <div id="canvas-container">
+        <canvas id="game-canvas"></canvas>
+    </div>
+
+    <!-- Emergency Ticker -->
+    <div id="emergency-ticker">
+        <div id="ticker-content">
+            ALERT: UNKNOWN BIOLOGICAL HAZARD DETECTED in SECTOR 7... EVACUATE IMMEDIATELY... EMERGENCY BROADCAST: THE
+            DEAD ARE RISING... STAY CALM... LOCK YOUR DOORS...
+        </div>
+    </div>
+
+    <!-- UI Overlay -->
+    <div id="ui-overlay">
+        <!-- Main Menu -->
+        <div id="main-menu">
+            <h1 class="glitch">ZOMBOBS</h1>
+            <button id="start-button" class="menu-button">Start Game</button>
+            <button id="resume-button" class="menu-button" style="display: none;">Resume</button>
+            <button id="settings-button" class="menu-button">Settings</button>
+            <button id="quit-button" class="menu-button">Quit</button>
+            <div id="version-text">BUILD: V0.0.1 ALPHA</div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div id="settings-panel">
+            <h2>Settings</h2>
+
+            <!-- Tab Navigation -->
+            <div class="settings-tabs">
+                <button class="settings-tab active" data-tab="audio">Audio</button>
+                <button class="settings-tab" data-tab="video">Video</button>
+                <button class="settings-tab" data-tab="controls">Controls</button>
+            </div>
+
+            <!-- Tab Content Panels -->
+            <div class="settings-content">
+                <!-- Audio Tab -->
+                <div class="tab-panel active" id="tab-audio">
+                    <div class="setting-item">
+                        <label for="master-volume-slider">
+                            Master Volume: <span id="master-volume-value">0.70</span>
+                        </label>
+                        <input type="range" id="master-volume-slider" min="0" max="1" value="0.7" step="0.05">
+                    </div>
+                    <div class="setting-item">
+                        <label>SFX Volume</label>
+                        <div class="setting-placeholder">Coming Soon</div>
+                    </div>
+                    <div class="setting-item">
+                        <label>Music Volume</label>
+                        <div class="setting-placeholder">Coming Soon</div>
+                    </div>
+                </div>
+
+                <!-- Video Tab -->
+                <div class="tab-panel" id="tab-video">
+                    <div class="setting-item">
+                        <label for="fullscreen-toggle">Fullscreen</label>
+                        <input type="checkbox" id="fullscreen-toggle">
+                    </div>
+                    <div class="setting-item">
+                        <label for="fov-slider">Field of View: <span id="fov-value">60</span>°</label>
+                        <input type="range" id="fov-slider" min="50" max="110" value="60" step="1">
+                    </div>
+                </div>
+
+                <!-- Controls Tab -->
+                <div class="tab-panel" id="tab-controls">
+                    <div class="setting-item">
+                        <label for="sensitivity-slider">Mouse Sensitivity: <span
+                                id="sensitivity-value">0.002</span></label>
+                        <input type="range" id="sensitivity-slider" min="0.0005" max="0.01" value="0.002" step="0.0005">
+                    </div>
+
+                    <div class="keybind-section">
+                        <h3>Key Bindings</h3>
+                        <div class="keybind-grid">
+                            <div class="keybind-row header">
+                                <span>Action</span>
+                                <span>Input</span>
+                            </div>
+                            <div class="keybind-row">
+                                <span>Move Forward</span>
+                                <div class="keys"><span class="key-badge">W</span> <span class="key-badge">UP</span>
+                                </div>
+                            </div>
+                            <div class="keybind-row">
+                                <span>Move Backward</span>
+                                <div class="keys"><span class="key-badge">S</span> <span class="key-badge">DOWN</span>
+                                </div>
+                            </div>
+                            <div class="keybind-row">
+                                <span>Move Left</span>
+                                <div class="keys"><span class="key-badge">A</span> <span class="key-badge">LEFT</span>
+                                </div>
+                            </div>
+                            <div class="keybind-row">
+                                <span>Move Right</span>
+                                <div class="keys"><span class="key-badge">D</span> <span class="key-badge">RIGHT</span>
+                                </div>
+                            </div>
+                            <div class="keybind-row">
+                                <span>Jump</span>
+                                <div class="keys"><span class="key-badge">SPACE</span></div>
+                            </div>
+                            <div class="keybind-row">
+                                <span>Sprint</span>
+                                <div class="keys"><span class="key-badge">SHIFT</span></div>
+                            </div>
+                            <div class="keybind-row">
+                                <span>Reload</span>
+                                <div class="keys"><span class="key-badge">R</span></div>
+                            </div>
+                            <div class="keybind-row">
+                                <span>Shoot</span>
+                                <div class="keys"><span class="key-badge">LMB</span></div>
+                            </div>
+                            <div class="keybind-row">
+                                <span>Look</span>
+                                <div class="keys"><span class="key-badge">MOUSE</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button id="back-button" class="menu-button">Back</button>
+        </div>
+    </div>
+
+    <!-- In-Game HUD -->
+    <div id="hud-container" style="display: none;">
+        <!-- Health Bar (Top-Left) -->
+        <div id="health-bar">
+            <div id="health-text">HP: 100/100</div>
+            <div id="health-bar-container">
+                <div id="health-bar-fill"></div>
+            </div>
+        </div>
+
+        <!-- Ammo Counter (Bottom-Right) -->
+        <div id="ammo-counter">
+            <span id="ammo-icon">🔫</span> <span id="ammo-text">12 / 48</span>
+        </div>
+
+        <!-- Kill Counter (Top-Right) -->
+        <div id="kill-counter">
+            <span id="kill-icon">💀</span> KILLS: <span id="kill-count">000</span>
+        </div>
+
+        <!-- Wave Indicator (Top-Center) -->
+        <div id="wave-indicator">WAVE <span id="wave-number">1</span></div>
+
+        <!-- Crosshair (Center, follows mouse) -->
+        <div id="crosshair"></div>
+
+        <!-- Reload Indicator (Center-Bottom) -->
+        <div id="reload-indicator">
+            <div id="reload-text">RELOADING...</div>
+            <div id="reload-bar-container">
+                <div id="reload-bar-fill"></div>
+            </div>
+        </div>
+
+        <!-- Low Health Vignette -->
+        <div id="low-health-vignette"></div>
+
+        <!-- Hit Marker -->
+        <div id="hit-marker"></div>
+
+        <!-- Keybind Display (Bottom-Center) -->
+        <div id="keybind-display">
+            <div class="keybind-item">
+                <span class="key">WASD</span>
+                <span class="action">Move</span>
+            </div>
+            <div class="keybind-item">
+                <span class="key">Mouse</span>
+                <span class="action">Look</span>
+            </div>
+            <div class="keybind-item">
+                <span class="key">LMB</span>
+                <span class="action">Shoot</span>
+            </div>
+            <div class="keybind-item">
+                <span class="key">ESC</span>
+                <span class="action">Unlock Mouse</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Flashlight effect tracking
+        const flashlight = document.getElementById('flashlight-overlay');
+        document.addEventListener('mousemove', (e) => {
+            const x = (e.clientX / window.innerWidth) * 100;
+            const y = (e.clientY / window.innerHeight) * 100;
+            flashlight.style.setProperty('--mouse-x', x + '%');
+            flashlight.style.setProperty('--mouse-y', y + '%');
+        });
+
+        // Update the TIMESTAMP_PLACEHOLDER with actual time using JS to handle cache busting dynamically if needed?
+        // Actually simpler to just hardcode a new version manually or use a simple script. 
+        // For now, I'll validly replacing the whole line with a script injection.
+        const script = document.createElement('script');
+        script.type = 'module';
+        script.src = `./bootstrap.js?v=${new Date().getTime()}`;
+        document.body.appendChild(script);
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,28 @@
+# Rust / Cargo
+/target/
+
+# WASM build output (reproducible via wasm-pack build)
+/pkg/
+
+# Secrets (STYLE_GUIDE: never in code)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+error.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Optional: uncomment if you add Node tooling later
+# node_modules/
