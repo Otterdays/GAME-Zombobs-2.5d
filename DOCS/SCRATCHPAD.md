@@ -48,6 +48,7 @@ None
 
 ## Git Prep (done)
 - [x] Root `.gitignore` added (target/, pkg/, .env, *.log, OS/IDE junk)
-- [ ] Run `git init` when ready; then `git add .` and first commit
+- [x] `git init`; first commit; remote `origin` = https://github.com/Otterdays/GAME-Zombobs-2.5d
+- **Push**: `git push -u origin master` (create repo on GitHub first if 404)
 - **Way forward**: Alpha is playable; next priorities: balance pass, SFX/Music sliders, damage feedback; then ROADMAP Phase 1.5 (character details) or Phase 3 (horde/flow field).
 
