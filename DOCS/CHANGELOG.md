@@ -21,6 +21,11 @@
 
 ## [Unreleased]
 ### Added
+- **[AMENDED 2026-04-06] Combat & loop polish**: Screen shake on camera (`shake_phase`/`shake_magnitude`, decay in tick); red `#damage-flash` on player hit via `window.playerDamageFlash`; hit markers triggered from projectile hits (`triggerHitMarker`); kill score tracked with `PlayerStats` in ECS.
+- **Game over**: On player death HUD shows wave / kills / score; best score persisted in `localStorage` (`zombobs_highscore_v1`); **Try Again** calls `restartRun()` — clears ephemeral entities, wipes zombie trees, resets Jeff + wave 1, `resetRunUi()`.
+- **Horde pacing**: Separation steering between zombies to reduce stacking; tweaked per-wave zombie health/speed/damage and spawn count curve (later waves slight count reduction multiplier).
+- **Audio routing**: Dedicated SFX and Music gain stages (music bus reserved); settings sliders for SFX/Music volume; menu UI sounds stay on master path only.
+- **HUD**: High score readout under wave indicator.
 - Blob shadows for player and trees to ground actors.
 - Tree scale variation for less repetitive silhouettes.
 - Main menu overlay with Start/Resume/Settings/Quit buttons.

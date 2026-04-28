@@ -120,6 +120,9 @@ pub struct Camera {
     pub smoothing: f32,       // Camera smoothing factor (0-1)
     pub head_bob_amount: f32, // Head bob intensity
     pub head_bob_time: f32,   // Head bob animation time
+    /// Screen shake: `shake_phase` advances while `shake_magnitude` decays (see `decay_shake`).
+    pub shake_phase: f32,
+    pub shake_magnitude: f32,
 }
 
 impl Camera {
@@ -134,6 +137,24 @@ impl Camera {
             smoothing: 1.0,    // Default to stable first-person
             head_bob_amount: 0.0,
             head_bob_time: 0.0,
+            shake_phase: 0.0,
+            shake_magnitude: 0.0,
+        }
+    }
+
+    /// Add camera kick; stacks up to a cap (gunshot, hit, explosion).
+    pub fn add_shake(&mut self, magnitude: f32) {
+        let m = magnitude.abs().min(0.4);
+        self.shake_magnitude = (self.shake_magnitude + m).min(0.22);
+    }
+
+    pub fn decay_shake(&mut self, dt: f32) {
+        if self.shake_magnitude > 0.0005 {
+            self.shake_phase += dt * 62.0;
+            self.shake_magnitude *= 0.9_f32.powf(dt * 18.0);
+            if self.shake_magnitude < 0.002 {
+                self.shake_magnitude = 0.0;
+            }
         }
     }
 
@@ -147,9 +168,11 @@ impl Camera {
         // Previously we were adding eye_height on top of position.
         
         let head_bob_z = self.head_bob_amount * (self.head_bob_time * 10.0).sin();
+        let shake_x = self.shake_phase.sin() * self.shake_magnitude;
+        let shake_y = (self.shake_phase * 1.27).cos() * self.shake_magnitude * 0.88;
         let eye = Vec3::new(
-            self.position.x,
-            self.position.y,
+            self.position.x + shake_x,
+            self.position.y + shake_y,
             self.position.z + head_bob_z, // Removed + self.eye_height to prevent double offset
         );
         

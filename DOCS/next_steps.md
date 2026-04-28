@@ -1,3 +1,11 @@
+<!-- PRESERVATION RULE: Never delete or replace content. Append or annotate only. -->
+
+## [Shipped 2026-04-06] — Reference (not the design doc below)
+
+Implemented elsewhere in the repo: camera screen shake; damage red flash; hit markers from WASM; game over + `restartRun` + localStorage high score; SFX/Music sliders (music bus idle); zombie separation + wave stat tweaks. Rebuild with `wasm-pack build --target web` after pulling.
+
+---
+
 Here’s a **glorious advanced depth strategy** you can roll out in layers (all engine‑friendly, no heavy assets). It builds real depth with lighting, composition, and motion—without changing your core pipeline.
 
 ---

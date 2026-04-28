@@ -1,9 +1,13 @@
 // bootstrap.js
 
+const ZOMBOBS_HIGH_SCORE_KEY = 'zombobs_highscore_v1';
+
 class AudioManager {
     constructor() {
         this.context = null;
         this.masterGain = null;
+        this.sfxGain = null;
+        this.musicGain = null;
         this.unlocked = false;
         this.pendingVolume = 0.7;
         this.lastPlay = {};
@@ -22,6 +26,15 @@ class AudioManager {
         this.context = new AudioCtx();
         this.masterGain = this.context.createGain();
         this.masterGain.gain.value = this.pendingVolume;
+
+        this.sfxGain = this.context.createGain();
+        this.sfxGain.gain.value = 0.85;
+        this.sfxGain.connect(this.masterGain);
+
+        this.musicGain = this.context.createGain();
+        this.musicGain.gain.value = 0.45;
+        this.musicGain.connect(this.masterGain);
+
         this.masterGain.connect(this.context.destination);
     }
 
@@ -43,6 +56,20 @@ class AudioManager {
         this.ensureContext();
         if (this.masterGain) {
             this.masterGain.gain.value = value;
+        }
+    }
+
+    setSfxVolume(value) {
+        this.ensureContext();
+        if (this.sfxGain) {
+            this.sfxGain.gain.value = value;
+        }
+    }
+
+    setMusicVolume(value) {
+        this.ensureContext();
+        if (this.musicGain) {
+            this.musicGain.gain.value = value;
         }
     }
 
@@ -104,7 +131,10 @@ class AudioManager {
         }
     }
 
-    playTone(freq, type, duration, volume, endFreq) {
+    /**
+     * @param {'master'|'sfx'} routing — menu sounds use `master` (not affected by SFX slider).
+     */
+    playTone(freq, type, duration, volume, endFreq, routing = 'master') {
         const ctx = this.context;
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -129,7 +159,9 @@ class AudioManager {
         );
 
         osc.connect(gain);
-        gain.connect(this.masterGain);
+        const dest =
+            routing === 'sfx' && this.sfxGain ? this.sfxGain : this.masterGain;
+        gain.connect(dest);
 
         osc.start();
         osc.stop(ctx.currentTime + duration + 0.02);
@@ -148,7 +180,7 @@ class AudioManager {
         return buffer;
     }
 
-    playNoise(duration, volume, filterType, filterFreq) {
+    playNoise(duration, volume, filterType, filterFreq, routing = 'master') {
         const ctx = this.context;
         const buffer = this.createNoiseBuffer(duration);
         const source = ctx.createBufferSource();
@@ -175,39 +207,41 @@ class AudioManager {
         }
 
         node.connect(gain);
-        gain.connect(this.masterGain);
+        const dest =
+            routing === 'sfx' && this.sfxGain ? this.sfxGain : this.masterGain;
+        gain.connect(dest);
 
         source.start();
         source.stop(ctx.currentTime + duration + 0.02);
     }
 
     playMenuHover() {
-        this.playTone(720, 'triangle', 0.05, 0.12, 920);
+        this.playTone(720, 'triangle', 0.05, 0.12, 920, 'master');
     }
 
     playMenuClick() {
-        this.playTone(420, 'square', 0.08, 0.18, 220);
+        this.playTone(420, 'square', 0.08, 0.18, 220, 'master');
     }
 
     playGunShot() {
-        this.playNoise(0.06, 0.5, 'highpass', 600);
-        this.playTone(120, 'square', 0.05, 0.25, 80);
-        this.playTone(1400, 'triangle', 0.02, 0.12, 900);
+        this.playNoise(0.06, 0.5, 'highpass', 600, 'sfx');
+        this.playTone(120, 'square', 0.05, 0.25, 80, 'sfx');
+        this.playTone(1400, 'triangle', 0.02, 0.12, 900, 'sfx');
     }
 
     playZombieHit() {
-        this.playTone(180, 'sawtooth', 0.18, 0.22, 90);
-        this.playNoise(0.08, 0.18, 'lowpass', 500);
+        this.playTone(180, 'sawtooth', 0.18, 0.22, 90, 'sfx');
+        this.playNoise(0.08, 0.18, 'lowpass', 500, 'sfx');
     }
 
     playZombieDeath() {
-        this.playTone(240, 'sawtooth', 0.6, 0.25, 60);
-        this.playNoise(0.25, 0.2, 'lowpass', 700);
+        this.playTone(240, 'sawtooth', 0.6, 0.25, 60, 'sfx');
+        this.playNoise(0.25, 0.2, 'lowpass', 700, 'sfx');
     }
 
     playPlayerHit() {
-        this.playTone(110, 'square', 0.12, 0.28, 70);
-        this.playNoise(0.06, 0.12, 'bandpass', 500);
+        this.playTone(110, 'square', 0.12, 0.28, 70, 'sfx');
+        this.playNoise(0.06, 0.12, 'bandpass', 500, 'sfx');
     }
 }
 
@@ -245,7 +279,8 @@ async function run() {
             menuOpen: true,
             settingsOpen: false,
             gameStarted: false,
-            loopRunning: false
+            loopRunning: false,
+            playerDead: false
         };
 
         const audioManager = new AudioManager();
@@ -299,6 +334,83 @@ async function run() {
         const reloadIndicator = document.getElementById('reload-indicator');
         const reloadBarFill = document.getElementById('reload-bar-fill');
         const lowHealthVignette = document.getElementById('low-health-vignette');
+        const sfxVolumeSlider = document.getElementById('sfx-volume-slider');
+        const sfxVolumeValue = document.getElementById('sfx-volume-value');
+        const musicVolumeSlider = document.getElementById('music-volume-slider');
+        const musicVolumeValue = document.getElementById('music-volume-value');
+        const gameOverPanel = document.getElementById('game-over-panel');
+        const restartButton = document.getElementById('restart-button');
+
+        /** @type {HTMLElement | null} */
+        let highScoreValueEl = document.getElementById('high-score-value');
+
+        function readHighScore() {
+            try {
+                const raw = parseInt(localStorage.getItem(ZOMBOBS_HIGH_SCORE_KEY) || '0', 10);
+                return Number.isFinite(raw) && raw >= 0 ? raw : 0;
+            } catch (_) {
+                return 0;
+            }
+        }
+
+        function writeHighScore(score) {
+            try {
+                localStorage.setItem(ZOMBOBS_HIGH_SCORE_KEY, String(score));
+            } catch (_) {
+                /* ignore quota / privacy mode */
+            }
+        }
+
+        function updateHighScoreHud() {
+            if (highScoreValueEl) {
+                highScoreValueEl.textContent = String(readHighScore());
+            }
+        }
+        updateHighScoreHud();
+
+        function exitPointerLockIfAny() {
+            if (document.exitPointerLock) {
+                document.exitPointerLock();
+            } else if (document.mozExitPointerLock) {
+                document.mozExitPointerLock();
+            } else if (document.webkitExitPointerLock) {
+                document.webkitExitPointerLock();
+            }
+        }
+
+        function openGameOver(waveVal, killsVal, scoreVal) {
+            const prev = readHighScore();
+            const best = Math.max(prev, scoreVal | 0);
+            if (best > prev) {
+                writeHighScore(best);
+            }
+            updateHighScoreHud();
+
+            const wEl = document.getElementById('go-wave');
+            const kEl = document.getElementById('go-kills');
+            const sEl = document.getElementById('go-score');
+            const hEl = document.getElementById('go-high-score');
+            if (wEl) {
+                wEl.textContent = String(waveVal);
+            }
+            if (kEl) {
+                kEl.textContent = String(killsVal);
+            }
+            if (sEl) {
+                sEl.textContent = String(scoreVal);
+            }
+            if (hEl) {
+                hEl.textContent = String(best);
+            }
+
+            menuState.playerDead = true;
+            exitPointerLockIfAny();
+
+            if (gameOverPanel) {
+                gameOverPanel.classList.add('active');
+            }
+            document.body.style.cursor = 'default';
+        }
         
         // Game state
         let gameState = {
@@ -363,6 +475,42 @@ async function run() {
             hitMarker.classList.add('active');
             setTimeout(() => hitMarker.classList.remove('active'), 200);
         };
+
+        window.playerDamageFlash = function() {
+            const el = document.getElementById('damage-flash');
+            if (!el) {
+                return;
+            }
+            el.classList.add('active');
+            clearTimeout(window.__zombobsDamageFlashT);
+            window.__zombobsDamageFlashT = setTimeout(() => {
+                el.classList.remove('active');
+            }, 95);
+        };
+
+        window.showGameOver = function(waveVal, killsVal, scoreVal) {
+            openGameOver(waveVal, killsVal, scoreVal);
+        };
+
+        window.resetRunUi = function() {
+            gameState.kills = 0;
+            gameState.wave = 1;
+            gameState.health = 100;
+            gameState.maxHealth = 100;
+            menuState.playerDead = false;
+
+            if (killCount) {
+                killCount.textContent = '000';
+            }
+            if (waveNumber) {
+                waveNumber.textContent = '1';
+            }
+            window.updateHealth(100, 100);
+            window.updateAmmo(12, 48);
+            if (gameOverPanel) {
+                gameOverPanel.classList.remove('active');
+            }
+        };
         
         // Crosshair follows mouse
         window.addEventListener('mousemove', (e) => {
@@ -421,6 +569,11 @@ async function run() {
             window.updateHealth(100, 100);
             window.updateAmmo(12, 48);
             window.setWave(1);
+            updateHighScoreHud();
+            if (gameOverPanel) {
+                gameOverPanel.classList.remove('active');
+            }
+            menuState.playerDead = false;
             
             if (!menuState.loopRunning) {
                 menuState.loopRunning = true;
@@ -496,6 +649,38 @@ async function run() {
                 const volume = parseFloat(e.target.value);
                 masterVolumeValue.textContent = volume.toFixed(2);
                 audioManager.setMasterVolume(volume);
+            });
+        }
+
+        if (sfxVolumeSlider && sfxVolumeValue) {
+            const v = parseFloat(sfxVolumeSlider.value);
+            sfxVolumeValue.textContent = v.toFixed(2);
+            audioManager.setSfxVolume(v);
+            sfxVolumeSlider.addEventListener('input', (e) => {
+                const next = parseFloat(e.target.value);
+                sfxVolumeValue.textContent = next.toFixed(2);
+                audioManager.setSfxVolume(next);
+            });
+        }
+
+        if (musicVolumeSlider && musicVolumeValue) {
+            const mv = parseFloat(musicVolumeSlider.value);
+            musicVolumeValue.textContent = mv.toFixed(2);
+            audioManager.setMusicVolume(mv);
+            musicVolumeSlider.addEventListener('input', (e) => {
+                const next = parseFloat(e.target.value);
+                musicVolumeValue.textContent = next.toFixed(2);
+                audioManager.setMusicVolume(next);
+            });
+        }
+
+        if (restartButton) {
+            restartButton.addEventListener('click', () => {
+                audioManager.unlock();
+                if (typeof engine.restartRun === 'function') {
+                    engine.restartRun();
+                }
+                document.body.style.cursor = 'none';
             });
         }
 

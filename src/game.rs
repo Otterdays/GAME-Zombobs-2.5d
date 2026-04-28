@@ -2,7 +2,11 @@ use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 use hecs::World;
 use crate::engine::renderer::{Renderer, Camera};
-use crate::engine::components::{Position, Velocity, Renderable, Player, CharacterMotor, LocalTransform, Parent, BodyPart, BodyPartType, GlobalRotation, AABB, MaterialId, Weapon, GunModel, IsShooting, TextureAtlasRegion, Jeff, Zombob};
+use crate::engine::components::{
+    CharacterMotor, Debris, GunModel, GlobalRotation, Health, IsShooting, Jeff, LocalTransform,
+    MaterialId, MuzzleFlash, Parent, Player, PlayerStats, Position, Projectile, Renderable,
+    TextureAtlasRegion, Velocity, Weapon, Zombob, BodyPart, BodyPartType, AABB,
+};
 use crate::engine::systems::{movement_system, player_input_system, transform_propagation_system, animation_system, projectile_system, weapon_system, flash_system, update_gun_model};
 use crate::engine::input::{InputState, Keybinds};
 use rand::Rng;
@@ -14,6 +18,12 @@ const SHADOW_COLOR: [f32; 4] = [0.04, 0.04, 0.04, 1.0];
 extern "C" {
     #[wasm_bindgen(js_namespace = window, js_name = setWave)]
     fn set_wave_js(wave: u32);
+
+    #[wasm_bindgen(js_namespace = window, js_name = showGameOver)]
+    fn show_game_over_js(wave: u32, kills: u32, score: u32);
+
+    #[wasm_bindgen(js_namespace = window, js_name = resetRunUi)]
+    fn reset_run_ui_js();
 }
 
 fn spawn_follow_shadow(world: &mut World, parent: hecs::Entity, width: f32, height: f32, z_offset: f32) {
@@ -93,15 +103,12 @@ fn spawn_zombob_wave(world: &mut World, rng: &mut impl Rng, count: u32, wave: u3
         let zombie = spawn_zombob(world, Vec3::new(x, y, 0.0));
         world.insert_one(zombie, Zombob).unwrap();
 
-        let health = (80.0 + rng.gen_range(0.0..40.0) + wave as f32 * 8.0)
-            .min(200.0);
-        world
-            .insert_one(zombie, crate::engine::components::Health::new(health))
-            .unwrap();
+        let health =
+            (68.0 + rng.gen_range(0.0..36.0) + wave as f32 * 6.8).min(178.0);
+        world.insert_one(zombie, Health::new(health)).unwrap();
 
-        let speed = (1.2 + rng.gen_range(0.0..1.5) + wave as f32 * 0.1)
-            .min(4.0);
-        let damage = (8.0 + wave as f32 * 1.0).min(25.0);
+        let speed = (1.05 + rng.gen_range(0.0..1.35) + wave as f32 * 0.09).min(3.85);
+        let damage = (7.25 + wave as f32 * 0.92).min(23.5);
         world
             .insert_one(
                 zombie,
@@ -114,6 +121,44 @@ fn spawn_zombob_wave(world: &mut World, rng: &mut impl Rng, count: u32, wave: u3
             )
             .unwrap();
         spawned += 1;
+    }
+}
+
+/// Matches `spawn_character_mesh` root Z offset for default survivor scale (0.6).
+const PLAYER_SPAWN_SCALE: f32 = 0.6;
+const JEFF_REST_Z: f32 = 0.55 * PLAYER_SPAWN_SCALE;
+
+fn despawn_entity_subtree(world: &mut World, root: hecs::Entity) {
+    let mut children = Vec::new();
+    for (entity, parent) in world.query::<&Parent>().iter() {
+        if parent.entity == root {
+            children.push(entity);
+        }
+    }
+    for child in children {
+        despawn_entity_subtree(world, child);
+    }
+    let _ = world.despawn(root);
+}
+
+fn despawn_all_ephemeral(world: &mut World) {
+    let mut projectile_ids: Vec<hecs::Entity> =
+        world.query::<&Projectile>().iter().map(|(e, _)| e).collect();
+    let mut flashes: Vec<hecs::Entity> =
+        world.query::<&MuzzleFlash>().iter().map(|(e, _)| e).collect();
+    let mut debris: Vec<hecs::Entity> = world.query::<&Debris>().iter().map(|(e, _)| e).collect();
+
+    projectile_ids.reverse();
+    for id in projectile_ids {
+        let _ = world.despawn(id);
+    }
+    flashes.reverse();
+    for id in flashes {
+        let _ = world.despawn(id);
+    }
+    debris.reverse();
+    for id in debris {
+        let _ = world.despawn(id);
     }
 }
 
@@ -311,6 +356,9 @@ pub struct GameEngine {
     fov: f32,
     wave: u32,
     wave_spawn_cooldown: f32,
+    player_entity: hecs::Entity,
+    player_dead: bool,
+    game_over_announced: bool,
 }
 
 impl GameEngine {
@@ -326,8 +374,11 @@ impl GameEngine {
         world.insert_one(player_entity, Player { id: 1 }).unwrap();
         world.insert_one(player_entity, Jeff).unwrap(); // Identity
         world.insert_one(player_entity, Weapon::taurus_g2c()).unwrap();
-        world.insert_one(player_entity, crate::engine::components::Health::new(100.0)).unwrap();
+        world.insert_one(player_entity, Health::new(100.0)).unwrap();
         world.insert_one(player_entity, IsShooting { active: false }).unwrap();
+        world
+            .insert_one(player_entity, PlayerStats::new())
+            .unwrap();
 
         let ground_z = world
             .get::<&Position>(player_entity)
@@ -411,12 +462,96 @@ impl GameEngine {
             fov: 1.047198, // Default 60 degrees in radians
             wave: 1,
             wave_spawn_cooldown: 0.0,
+            player_entity,
+            player_dead: false,
+            game_over_announced: false,
         })
+    }
+
+    fn update_wave(&mut self, dt: f32) {
+        let alive = self.world.query::<&Zombob>().iter().count() as u32;
+        if alive > 0 {
+            self.wave_spawn_cooldown = 1.0;
+            return;
+        }
+
+        if self.wave_spawn_cooldown > 0.0 {
+            self.wave_spawn_cooldown -= dt;
+            return;
+        }
+
+        self.wave += 1;
+        let spawn_count = ((3 + self.wave * 2) as f32 * (if self.wave > 8 { 0.92 } else { 1.0 })) as u32;
+        let spawn_count = spawn_count.max(4);
+        let mut rng = rand::thread_rng();
+        spawn_zombob_wave(&mut self.world, &mut rng, spawn_count, self.wave);
+        set_wave_js(self.wave);
+        self.wave_spawn_cooldown = 2.25;
+    }
+
+    fn finalize_player_death_ui(&mut self) {
+        if self.game_over_announced || !self.player_dead {
+            return;
+        }
+        self.game_over_announced = true;
+        let kills = self
+            .world
+            .get::<&PlayerStats>(self.player_entity)
+            .map(|s| s.kills)
+            .unwrap_or(0);
+        let score = kills.saturating_mul(12).saturating_add(self.wave.saturating_mul(80));
+        show_game_over_js(self.wave, kills, score);
     }
 }
 
 #[wasm_bindgen]
 impl GameEngine {
+    #[wasm_bindgen(js_name = restartRun)]
+    /// Clears run state and respawns a fresh horde (used after "Try Again" in UI).
+    pub fn restart_run(&mut self) {
+        despawn_all_ephemeral(&mut self.world);
+
+        let z_roots: Vec<hecs::Entity> = self.world.query::<&Zombob>().iter().map(|(e, _)| e).collect();
+        for root in z_roots {
+            despawn_entity_subtree(&mut self.world, root);
+        }
+
+        self.wave = 1;
+        self.wave_spawn_cooldown = 0.0;
+        self.player_dead = false;
+        self.game_over_announced = false;
+        self.camera.shake_phase = 0.0;
+        self.camera.shake_magnitude = 0.0;
+
+        if let Ok(mut pos) = self.world.get::<&mut Position>(self.player_entity) {
+            pos.x = 0.0;
+            pos.y = 0.0;
+            pos.z = JEFF_REST_Z;
+        }
+        if let Ok(mut vel) = self.world.get::<&mut Velocity>(self.player_entity) {
+            vel.x = 0.0;
+            vel.y = 0.0;
+            vel.z = 0.0;
+        }
+        if let Ok(mut h) = self.world.get::<&mut Health>(self.player_entity) {
+            h.current = h.max;
+        }
+        if let Ok(mut stats) = self.world.get::<&mut PlayerStats>(self.player_entity) {
+            stats.kills = 0;
+        }
+        let _ = self
+            .world
+            .insert_one(self.player_entity, Weapon::taurus_g2c());
+        let _ = self
+            .world
+            .insert_one(self.player_entity, IsShooting { active: false });
+
+        let mut rng = rand::thread_rng();
+        spawn_zombob_wave(&mut self.world, &mut rng, 5, 1);
+        set_wave_js(1);
+        reset_run_ui_js();
+    }
+
     pub fn toggle_handedness(&mut self) {
         self.left_handed = !self.left_handed;
     }
@@ -433,29 +568,19 @@ impl GameEngine {
         self.camera.fov = self.fov;
     }
 
-    fn update_wave(&mut self, dt: f32) {
-        let alive = self.world.query::<&Zombob>().iter().count() as u32;
-        if alive > 0 {
-            self.wave_spawn_cooldown = 1.0;
-            return;
-        }
-
-        if self.wave_spawn_cooldown > 0.0 {
-            self.wave_spawn_cooldown -= dt;
-            return;
-        }
-
-        self.wave += 1;
-        let spawn_count = 3 + self.wave * 2;
-        let mut rng = rand::thread_rng();
-        spawn_zombob_wave(&mut self.world, &mut rng, spawn_count, self.wave);
-        set_wave_js(self.wave);
-        self.wave_spawn_cooldown = 2.0;
-    }
-
     pub fn tick(&mut self, time: f64) {
         let dt = (time - self.last_time) as f32 / 1000.0; // convert ms to s
         self.last_time = time;
+
+        self.camera.decay_shake(dt);
+
+        if self.player_dead {
+            self.input_state.end_frame();
+            if let Err(e) = self.renderer.render(&self.world, &self.camera) {
+                web_sys::console::error_1(&JsValue::from_str(&format!("Render error: {}", e)));
+            }
+            return;
+        }
 
         self.camera.yaw += self.input_state.mouse_dx * self.mouse_sensitivity;
         self.camera.pitch -= self.input_state.mouse_dy * self.mouse_sensitivity;
@@ -464,22 +589,29 @@ impl GameEngine {
 
         // Run systems
         weapon_system(&mut self.world, dt);
-        crate::engine::systems::ai_system(&mut self.world, dt); // Run AI logic
-        crate::engine::systems::health_system(&mut self.world); // Update Health UI
+        crate::engine::systems::ai_system(&mut self.world, dt, &mut self.camera);
+        crate::engine::systems::health_system(&mut self.world);
         player_input_system(
             &mut self.world,
             &self.input_state,
-            &self.camera,
+            &mut self.camera,
             self.left_handed,
             self.renderer.size.0 as f32,
             self.renderer.size.1 as f32,
         );
-        projectile_system(&mut self.world, dt); // Run projectile logic
-        flash_system(&mut self.world, dt); // Run flash logic
+        projectile_system(&mut self.world, dt, &mut self.camera);
+        flash_system(&mut self.world, dt);
         movement_system(&mut self.world, dt);
         animation_system(&mut self.world, time);
         transform_propagation_system(&mut self.world);
         self.update_wave(dt);
+
+        if let Ok(health) = self.world.get::<&Health>(self.player_entity) {
+            if health.current <= 0.0 {
+                self.player_dead = true;
+            }
+        }
+        self.finalize_player_death_ui();
 
         // Update camera to follow player and apply mouse look
         let mut player_velocity = glam::Vec2::ZERO;

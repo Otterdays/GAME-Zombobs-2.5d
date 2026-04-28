@@ -1,6 +1,10 @@
 # SCRATCHPAD
 
 ## Active Tasks
+- [x] Combat UX pass (damage flash, hit markers wired from WASM, camera screen shake)
+- [x] Game over overlay + score + localStorage high score + Try Again (`restartRun` / `resetRunUi`)
+- [x] Zombie separation steering (anti-stack) + softer wave/stat scaling tweaks
+- [x] SFX + Music volume sliders wired to Web Audio gains (music bus ready for future loop)
 - [x] Fix WebGPU "maxInterStageShaderComponents" limit error
 - [x] Initialize Game Engine (ECS, WebGPU, Loop)
 - [x] Add Player Entity (Green, Centered)
@@ -35,16 +39,22 @@
 None
 
 ## Last 5 Actions
-1. Prepped for git: root `.gitignore` (target/, pkg/, .env, logs, OS/IDE).
-2. Updated SCRATCHPAD with way forward; fixed SUMMARY path.
-3. Realigned gun model to camera using shared offsets (no floating).
-4. Added wave progression system with dynamic zombie spawns and UI updates.
-5. Added player hit sound effect and settings panel audio interactions.
+1. `PlayerStats`, `showGameOver` / `resetRunUi`, `restartRun()` + JS game-over HUD and high-score persistence.
+2. Camera shake pipeline (`add_shake` / `decay_shake`), damage red flash `#damage-flash`, hit marker calls from projectile/hit flows.
+3. AI separation forces + wave spawn pacing adjustment (later waves slightly eased on count).
+4. Audio: SFX sub-bus + Music sub-bus sliders; menu sounds remain on master-only path.
+5. Prepped `pkg` wasm-pack output after API additions (`restartRun`).
+
+[AMENDED 2026-04-06] — Earlier actions retained for trace:
+- Prepped for git: root `.gitignore` (target/, pkg/, .env, logs, OS/IDE).
+- Updated SCRATCHPAD with way forward; fixed SUMMARY path.
+- Realigned gun model to camera using shared offsets (no floating).
+- Added wave progression system with dynamic zombie spawns and UI updates.
+- Added player hit sound effect and settings panel audio interactions.
 
 ## Next Steps
-- [ ] Balance wave scaling (spawn counts, speed, damage, health)
-- [ ] Add SFX and Music volume sliders (currently placeholders)
-- [ ] Add player damage UI feedback (screen flash or vignette)
+- [ ] Further balance pass from live playtests (waves 5+ tuning)
+- [ ] Hook music track into `musicGain` bus when asset exists
 
 ## Git Prep (done)
 - [x] Root `.gitignore` added (target/, pkg/, .env, *.log, OS/IDE junk)

@@ -200,12 +200,16 @@
                         <input type="range" id="master-volume-slider" min="0" max="1" value="0.7" step="0.05">
                     </div>
                     <div class="setting-item">
-                        <label>SFX Volume</label>
-                        <div class="setting-placeholder">Coming Soon</div>
+                        <label for="sfx-volume-slider">
+                            SFX Volume: <span id="sfx-volume-value">0.85</span>
+                        </label>
+                        <input type="range" id="sfx-volume-slider" min="0" max="1" value="0.85" step="0.05">
                     </div>
                     <div class="setting-item">
-                        <label>Music Volume</label>
-                        <div class="setting-placeholder">Coming Soon</div>
+                        <label for="music-volume-slider">
+                            Music Volume: <span id="music-volume-value">0.50</span>
+                        </label>
+                        <input type="range" id="music-volume-slider" min="0" max="1" value="0.5" step="0.05">
                     </div>
                 </div>
 
@@ -308,6 +312,8 @@
         <!-- Wave Indicator (Top-Center) -->
         <div id="wave-indicator">WAVE <span id="wave-number">1</span></div>
 
+        <div id="high-score-display">HIGH <span id="high-score-value">0</span></div>
+
         <!-- Crosshair (Center, follows mouse) -->
         <div id="crosshair"></div>
 
@@ -322,8 +328,21 @@
         <!-- Low Health Vignette -->
         <div id="low-health-vignette"></div>
 
+        <!-- Red flash overlay when Jeff takes damage (from WASM) -->
+        <div id="damage-flash" aria-hidden="true"></div>
+
         <!-- Hit Marker -->
         <div id="hit-marker"></div>
+
+        <!-- Death overlay (shown from WASM via showGameOver) -->
+        <div id="game-over-panel" aria-live="polite">
+            <h2 id="game-over-title">SURVIVAL FAILED</h2>
+            <p class="game-over-row">Wave: <strong id="go-wave">1</strong></p>
+            <p class="game-over-row">Kills: <strong id="go-kills">0</strong></p>
+            <p class="game-over-row">Score: <strong id="go-score">0</strong></p>
+            <p class="game-over-row high-score-line">Best: <strong id="go-high-score">0</strong></p>
+            <button type="button" id="restart-button" class="menu-button hud-button">TRY AGAIN</button>
+        </div>
 
         <!-- Keybind Display (Bottom-Center) -->
         <div id="keybind-display">

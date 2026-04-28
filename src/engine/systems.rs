@@ -1,5 +1,9 @@
 use hecs::World;
-use super::components::{Position, Velocity, Player, Parent, LocalTransform, BodyPart, BodyPartType, GlobalRotation, Renderable, Projectile, AABB, MuzzleFlash, HitFlash, Weapon, IsShooting, Health, SimpleAI, Jeff, Debris, Gravity, CharacterMotor, GunModel};
+use super::components::{
+    BodyPart, BodyPartType, CharacterMotor, Debris, GlobalRotation, Gravity, GunModel, Health,
+    HitFlash, IsShooting, Jeff, LocalTransform, MuzzleFlash, Parent, Player, PlayerStats,
+    Position, Projectile, Renderable, SimpleAI, Velocity, Weapon, Zombob, AABB,
+};
 use super::input::InputState;
 use glam::{Vec3, Quat};
 use rand::Rng; // Add rand import
@@ -19,39 +23,72 @@ extern "C" {
 
     #[wasm_bindgen(js_namespace = window, js_name = playGameSound)]
     fn play_game_sound_js(name: &str);
+
+    #[wasm_bindgen(js_namespace = window, js_name = playerDamageFlash)]
+    fn player_damage_flash_js();
+
+    #[wasm_bindgen(js_namespace = window, js_name = triggerHitMarker)]
+    fn trigger_hit_marker_js();
 }
 
-pub fn ai_system(world: &mut World, dt: f32) {
+pub fn ai_system(world: &mut World, dt: f32, camera: &mut super::renderer::Camera) {
     // 1. Find the Player (Jeff) position and entity
     let mut jeff_target = None;
     for (entity, (pos, _jeff)) in world.query::<(&Position, &Jeff)>().iter() {
         jeff_target = Some((entity, Vec3::new(pos.x, pos.y, pos.z)));
         break; // Assume single player
     }
-    
+
+    let zpack: Vec<(hecs::Entity, f32, f32)> = world
+        .query::<(&Position, &Zombob)>()
+        .iter()
+        .map(|(e, (p, _))| (e, p.x, p.y))
+        .collect();
+
     // Collect damage events to apply after iteration
     let mut damage_events = Vec::new();
 
     if let Some((player_entity, target)) = jeff_target {
         // 2. Move AI entities towards Jeff
-        for (_id, (pos, vel, rotation, ai)) in world.query_mut::<(&Position, &mut Velocity, &mut GlobalRotation, &mut SimpleAI)>() {
+        for (z_id, (pos, vel, rotation, ai)) in world
+            .query_mut::<(&Position, &mut Velocity, &mut GlobalRotation, &mut SimpleAI)>()
+        {
             // Update cooldown
             if ai.attack_cooldown > 0.0 {
                 ai.attack_cooldown -= dt;
             }
 
+            let mut sep_x = 0.0f32;
+            let mut sep_y = 0.0f32;
+            const SEP_RADIUS: f32 = 0.48;
+            for (other, ox, oy) in &zpack {
+                if *other == z_id {
+                    continue;
+                }
+                let dx = pos.x - ox;
+                let dy = pos.y - oy;
+                let d2 = dx * dx + dy * dy;
+                if d2 >= SEP_RADIUS * SEP_RADIUS || d2 < 1e-6 {
+                    continue;
+                }
+                let d = d2.sqrt();
+                let push = (SEP_RADIUS - d) / SEP_RADIUS;
+                sep_x += (dx / d) * push;
+                sep_y += (dy / d) * push;
+            }
+
             let dx = target.x - pos.x;
             let dy = target.y - pos.y;
             let dist_sq = dx * dx + dy * dy;
-            let dist = dist_sq.sqrt();
-            
+            let dist = dist_sq.sqrt().max(0.0001);
+
             // Attack Logic
-            if dist < 1.0 { // Attack range
+            if dist < 1.0 {
+                // Attack range
                 if ai.attack_cooldown <= 0.0 {
-                    // Attack!
                     damage_events.push((player_entity, ai.damage));
                     ai.attack_cooldown = 1.0; // 1 second cooldown
-                    
+
                     // Lunge forward slightly
                     vel.x += (dx / dist) * 5.0;
                     vel.y += (dy / dist) * 5.0;
@@ -60,40 +97,52 @@ pub fn ai_system(world: &mut World, dt: f32) {
 
             if dist_sq < ai.detection_radius * ai.detection_radius {
                 // Move towards player
-                if dist > 0.6 { // maintain distance
+                if dist > 0.6 {
+                    // maintain distance
                     let dir_x = dx / dist;
                     let dir_y = dy / dist;
-                    
-                    // Accelerate towards player (don't just set velocity, add logic for weight)
-                    // For now, simple set
+
                     vel.x = dir_x * ai.move_speed;
                     vel.y = dir_y * ai.move_speed;
-                    
+
                     // Rotate to face player
                     let angle = dy.atan2(dx) - std::f32::consts::FRAC_PI_2;
                     rotation.rotation = Quat::from_rotation_z(angle);
                 } else {
-                    // Too close, stop (but keep facing)
-                    vel.x = 0.0;
-                    vel.y = 0.0;
+                    // Too close, slow down (melee sizing) — separation pushes sideways
+                    vel.x *= 0.65;
+                    vel.y *= 0.65;
                     let angle = dy.atan2(dx) - std::f32::consts::FRAC_PI_2;
                     rotation.rotation = Quat::from_rotation_z(angle);
                 }
+
+                vel.x += sep_x * ai.move_speed * 2.2 * dt;
+                vel.y += sep_y * ai.move_speed * 2.2 * dt;
+
+                let sp = (vel.x * vel.x + vel.y * vel.y).sqrt();
+                let cap = ai.move_speed * 1.35;
+                if sp > cap {
+                    let k = cap / sp;
+                    vel.x *= k;
+                    vel.y *= k;
+                }
             } else {
                 // Idle
-                // Decay velocity / friction
                 vel.x *= 0.9;
                 vel.y *= 0.9;
+                vel.x += sep_x * ai.move_speed * 1.5 * dt;
+                vel.y += sep_y * ai.move_speed * 1.5 * dt;
             }
         }
     }
-    
+
     // Apply damage to player
     for (entity, dmg) in damage_events {
         if let Ok(mut health) = world.get::<&mut Health>(entity) {
             health.current -= dmg;
-            play_game_sound_js("player_hit"); // Need to ensure this sound exists or use generic
-            // Screen shake or redness? (Todo)
+            play_game_sound_js("player_hit");
+            player_damage_flash_js();
+            camera.add_shake(0.068);
         }
     }
 }
@@ -388,7 +437,7 @@ pub fn movement_system(world: &mut World, dt: f32) {
 pub fn player_input_system(
     world: &mut World,
     input: &InputState,
-    camera: &super::renderer::Camera,
+    camera: &mut super::renderer::Camera,
     left_handed: bool,
     screen_width: f32,
     screen_height: f32,
@@ -406,7 +455,7 @@ pub fn player_input_system(
     let mut muzzle_flash_spawn: Option<(glam::Vec3, Quat)> = None;
     let mut shooting_updates: Vec<(hecs::Entity, bool)> = Vec::new();
 
-    for (player_id, (pos, vel, rotation, weapon, motor, _player)) in world.query_mut::<(&Position, &mut Velocity, &mut GlobalRotation, &mut Weapon, &mut CharacterMotor, &Player)>() {
+    for (player_id, (_pos, vel, rotation, weapon, motor, _player)) in world.query_mut::<(&Position, &mut Velocity, &mut GlobalRotation, &mut Weapon, &mut CharacterMotor, &Player)>() {
         // 1. Movement (WASD) relative to camera yaw (true FPS)
         let forward = Vec3::new(camera.yaw.sin(), camera.yaw.cos(), 0.0);
         let right = Vec3::new(forward.y, -forward.x, 0.0);
@@ -450,6 +499,7 @@ pub fn player_input_system(
         if is_shooting {
             weapon.fire();
             play_game_sound_js("gun_shot");
+            camera.add_shake(0.016);
 
             let forward_aim = Vec3::new(
                 camera.yaw.sin() * camera.pitch.cos(),
@@ -555,7 +605,7 @@ pub fn update_gun_model(world: &mut World, camera: &super::renderer::Camera, lef
     let _ = world.insert_one(gun_id, GlobalRotation::new(gun_rot));
 }
 
-pub fn projectile_system(world: &mut World, dt: f32) {
+pub fn projectile_system(world: &mut World, dt: f32, camera: &mut super::renderer::Camera) {
     let mut to_despawn = Vec::new();
     let mut damage_events = Vec::new(); // (Entity, Damage)
     let mut hit_events: Vec<(hecs::Entity, Velocity)> = Vec::new();
@@ -587,7 +637,8 @@ pub fn projectile_system(world: &mut World, dt: f32) {
                 to_despawn.push(id);
                 damage_events.push((*z_id, 25.0)); // 25 Damage per shot
                 hit_events.push((*z_id, projectile_velocity));
-                
+                trigger_hit_marker_js();
+                camera.add_shake(0.014);
                 break; // One bullet hits one zombie
             }
         }
@@ -680,7 +731,12 @@ pub fn projectile_system(world: &mut World, dt: f32) {
         }
 
         let _ = world.despawn(entity);
+        for (_, stats) in world.query_mut::<&mut PlayerStats>() {
+            stats.kills += 1;
+            break;
+        }
         increment_kills_js();
+        camera.add_shake(0.038);
     }
 
     // Update muzzle flashes

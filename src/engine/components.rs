@@ -282,6 +282,18 @@ pub struct Zombob; // The enemy (formerly Zombie)
 #[derive(Debug, Clone, Copy)]
 pub struct Jeff; // The player character identity
 
+/// Run stats tracked for scoring and game-over screen.
+#[derive(Debug, Clone, Copy)]
+pub struct PlayerStats {
+    pub kills: u32,
+}
+
+impl PlayerStats {
+    pub fn new() -> Self {
+        Self { kills: 0 }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct SimpleAI {
     pub move_speed: f32,
